@@ -2,13 +2,13 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#07111f" />
   <title>GLOBE — Internet Speed Test</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=4" />
 </head>
 <body>
   <div class="app-shell">
@@ -21,10 +21,13 @@
       <section class="hero">
         <div class="eyebrow">INTERNET PERFORMANCE</div>
         <h1>How fast is your internet, really?</h1>
-        <p>Measure download, upload, latency and jitter with a real browser-based network test.</p>
+        <p>Real download and upload measurements from the Cloudflare edge, with latency and jitter reported separately.</p>
 
         <div class="tester-card">
-          <div class="test-mode"><span class="mode-dot"></span><span id="modeLabel">Ready to test</span></div>
+          <div class="stage-tabs" aria-label="Test stages">
+            <div class="stage-tab active" id="downloadStage"><span class="stage-icon">↓</span><span>Download</span></div>
+            <div class="stage-tab" id="uploadStage"><span class="stage-icon">↑</span><span>Upload</span></div>
+          </div>
 
           <div class="gauge-wrap">
             <svg class="gauge" viewBox="0 0 280 280" aria-hidden="true">
@@ -33,33 +36,35 @@
             </svg>
             <div class="gauge-labels" aria-hidden="true">
               <span class="g0">0</span><span class="g10">10</span><span class="g20">20</span><span class="g30">30</span><span class="g40">40</span>
-              <span class="g50">50</span><span class="g60">60</span><span class="g70">70</span><span class="g80">80</span><span class="g90">90</span><span class="g100">100+</span>
+              <span class="g50">50</span><span class="g60">60</span><span class="g70">70</span><span class="g80">80</span><span class="g90">90</span><span class="g100">100</span>
             </div>
             <div class="gauge-center">
               <div id="speedValue" class="speed-value">0.0</div>
               <div id="speedUnit" class="speed-unit">Mbps</div>
+              <div id="liveLabel" class="live-label">READY</div>
             </div>
           </div>
 
-          <div class="stage-indicator" aria-label="Test progress">
-            <span class="stage-dot active" data-stage-dot="download"></span><span>Download</span>
-            <span class="stage-line"></span>
-            <span class="stage-dot" data-stage-dot="upload"></span><span>Upload</span>
+          <div class="measurement-row">
+            <span class="pulse-dot"></span>
+            <span id="testState">Ready for a test</span>
           </div>
-          <div class="test-state" id="testState">Ready for a test</div>
-          <div class="button-row">
+          <div class="data-meter"><div id="dataMeterBar"></div></div>
+          <div class="data-meter-labels"><span id="dataMeterLabel">Waiting for measurement</span><span id="stageProgress">0%</span></div>
+
+          <div class="action-row">
             <button id="startButton" class="start-button">Start Test</button>
             <button id="stopButton" class="stop-button" hidden>Stop</button>
-            <button id="retryButton" class="retry-button" hidden>Retry</button>
           </div>
-          <div class="progress-track" aria-hidden="true"><div id="progressBar"></div></div>
-          <div class="test-meta"><span id="elapsed">0.0s</span><span id="serverLabel">Cloudflare edge test</span></div>
+          <button id="retryButton" class="retry-button" hidden>↻ Retry Test</button>
+
+          <div class="test-meta"><span id="elapsed">0.0s</span><span id="serverLabel">Cloudflare edge</span></div>
         </div>
       </section>
 
       <section class="results-grid" aria-label="Test results">
-        <article class="result-card"><div class="result-icon">↓</div><div><span>Download</span><strong id="downloadResult">—</strong><small>Mbps</small></div></article>
-        <article class="result-card"><div class="result-icon">↑</div><div><span>Upload</span><strong id="uploadResult">—</strong><small>Mbps</small></div></article>
+        <article class="result-card download-card"><div class="result-icon">↓</div><div><span>Download</span><strong id="downloadResult">—</strong><small>Mbps</small></div></article>
+        <article class="result-card upload-card"><div class="result-icon">↑</div><div><span>Upload</span><strong id="uploadResult">—</strong><small>Mbps</small></div></article>
         <article class="result-card"><div class="result-icon">◌</div><div><span>Ping</span><strong id="pingResult">—</strong><small>ms</small></div></article>
         <article class="result-card"><div class="result-icon">∿</div><div><span>Jitter</span><strong id="jitterResult">—</strong><small>ms</small></div></article>
       </section>
@@ -75,15 +80,16 @@
           </dl>
         </article>
         <article class="info-card">
-          <div class="info-heading"><span class="mini-badge">ABOUT</span><h2>How it works</h2></div>
-          <p>GLOBE measures real network transfers from your browser. Ping and jitter are reported in the results below; the main meter is reserved for download and upload throughput.</p>
-          <p class="muted">Results vary with your ISP, Wi‑Fi conditions, VPNs, background traffic and the selected test edge.</p>
+          <div class="info-heading"><span class="mini-badge">MEASUREMENT</span><h2>What GLOBE measures</h2></div>
+          <p>Download and upload are measured with Cloudflare's open-source speed-test engine. Ping and jitter are kept out of the main meter so the throughput display stays clear.</p>
+          <p class="muted">Stop at any time. If a measurement fails, retry without refreshing the page.</p>
         </article>
       </section>
     </main>
 
     <footer>GLOBE speed test · Browser-based measurement</footer>
   </div>
-  <script src="app.js"></script>
+
+  <script type="module" src="app.js?v=4"></script>
 </body>
 </html>
