@@ -4,167 +4,301 @@ const circumference = 2 * Math.PI * 112;
 progressCircle.style.strokeDasharray = circumference;
 progressCircle.style.strokeDashoffset = circumference;
 
-const state = { running:false, metric:"download", download:null, upload:null, ping:null, jitter:null };
 const TEST_HOST = "https://speed.cloudflare.com";
+const state = {
+  running: false,
+  stopped: false,
+  xhr: null,
+  download: null,
+  upload: null,
+  ping: null,
+  jitter: null,
+};
 
-function setProgress(percent){
-  const value=Math.max(0,Math.min(100,percent));
-  progressCircle.style.strokeDashoffset=circumference*(1-value/100);
-  $("progressBar").style.width=`${value}%`;
-}
-function setMetric(value,unit="Mbps"){
-  $("speedValue").textContent=Number.isFinite(value)?value.toFixed(value>=100?0:1):"0.0";
-  $("speedUnit").textContent=unit;
-}
-function format(value){return Number.isFinite(value)?(value>=100?value.toFixed(0):value.toFixed(1)):"—";}
-function average(values){return values.length?values.reduce((a,b)=>a+b,0)/values.length:NaN;}
-function sleep(ms){return new Promise(resolve=>setTimeout(resolve,ms));}
-
-function getNetworkInfo(){
-  const connection=navigator.connection||navigator.mozConnection||navigator.webkitConnection;
-  $("onlineState").textContent=navigator.onLine?"Online":"Offline";
-  if(!connection)return;
-  $("connectionType").textContent=connection.type||"Browser reported";
-  $("downlinkEstimate").textContent=Number.isFinite(connection.downlink)?`${connection.downlink} Mbps`:"—";
-  $("effectiveType").textContent=connection.effectiveType||"—";
+function setStageProgress(percent) {
+  const value = Math.max(0, Math.min(100, percent));
+  $("progressBar").style.width = `${value}%`;
 }
 
-function setStage(stage){
-  const order=["ping","download","upload"];
-  const index=order.indexOf(stage);
-  document.querySelectorAll("[data-stage-dot]").forEach(dot=>{
-    const dotIndex=order.indexOf(dot.dataset.stageDot);
-    dot.classList.toggle("active",dotIndex===index);
-    dot.classList.toggle("done",dotIndex<index);
+function setSpeed(value, unit = "Mbps") {
+  $("speedValue").textContent = Number.isFinite(value) ? value.toFixed(value >= 100 ? 0 : 1) : "0.0";
+  $("speedUnit").textContent = unit;
+
+  if (unit !== "Mbps" || !Number.isFinite(value)) return;
+  // The visible scale is 0–100+ Mbps. Faster connections still show the real
+  // number in the center while the ring caps cleanly at the 100+ mark.
+  const meterPercent = Math.min(100, Math.max(0, value));
+  progressCircle.style.strokeDashoffset = circumference * (1 - meterPercent / 100);
+}
+
+function format(value) {
+  return Number.isFinite(value) ? (value >= 100 ? value.toFixed(0) : value.toFixed(1)) : "—";
+}
+
+function average(values) {
+  return values.length ? values.reduce((a, b) => a + b, 0) / values.length : NaN;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function setStage(stage) {
+  document.querySelectorAll("[data-stage-dot]").forEach((dot) => {
+    const active = dot.dataset.stageDot === stage;
+    dot.classList.toggle("active", active);
+    dot.classList.toggle("done", stage === "upload" && dot.dataset.stageDot === "download");
   });
-  document.querySelectorAll(".metric-tab").forEach(tab=>{
-    const active=tab.dataset.metric===stage;
-    tab.classList.toggle("active",active);
-    tab.setAttribute("aria-selected",active?"true":"false");
+}
+
+function getNetworkInfo() {
+  const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  $("onlineState").textContent = navigator.onLine ? "Online" : "Offline";
+  if (!connection) return;
+  $("connectionType").textContent = connection.type || "Browser reported";
+  $("downlinkEstimate").textContent = Number.isFinite(connection.downlink) ? `${connection.downlink} Mbps` : "—";
+  $("effectiveType").textContent = connection.effectiveType || "—";
+}
+
+function setButtons(mode) {
+  const start = $("startButton");
+  const stop = $("stopButton");
+  const retry = $("retryButton");
+
+  start.hidden = mode === "running" || mode === "error";
+  stop.hidden = mode !== "running";
+  retry.hidden = mode !== "error" && mode !== "stopped";
+  start.disabled = mode === "running";
+}
+
+function cancelCurrentTransfer() {
+  if (state.xhr) {
+    state.xhr.abort();
+    state.xhr = null;
+  }
+}
+
+function xhrTransfer({ method, url, body, totalBytes, progressBase, progressSpan, timeout = 30000 }) {
+  return new Promise((resolve, reject) => {
+    if (state.stopped) {
+      reject(new Error("Stopped"));
+      return;
+    }
+
+    const xhr = new XMLHttpRequest();
+    state.xhr = xhr;
+    const started = performance.now();
+    let lastLoaded = 0;
+    let lastTime = started;
+
+    xhr.open(method, url, true);
+    xhr.timeout = timeout;
+    xhr.responseType = "arraybuffer";
+    xhr.setRequestHeader("Cache-Control", "no-cache");
+
+    const onProgress = (loaded) => {
+      const now = performance.now();
+      const elapsed = (now - started) / 1000;
+      if (elapsed > 0) {
+        const mbps = (loaded * 8) / elapsed / 1e6;
+        setSpeed(mbps);
+      }
+      if (totalBytes) {
+        const fraction = Math.min(1, loaded / totalBytes);
+        setStageProgress(progressBase + fraction * progressSpan);
+      }
+      lastLoaded = loaded;
+      lastTime = now;
+    };
+
+    xhr.onprogress = (event) => onProgress(event.loaded);
+    if (xhr.upload) xhr.upload.onprogress = (event) => onProgress(event.loaded);
+
+    xhr.onload = () => {
+      state.xhr = null;
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new Error(`Transfer failed (${xhr.status})`));
+        return;
+      }
+      const elapsed = (performance.now() - started) / 1000;
+      const bytes = totalBytes || lastLoaded;
+      if (!bytes || elapsed <= 0) {
+        reject(new Error("Transfer contained no measurable data"));
+        return;
+      }
+      resolve((bytes * 8) / elapsed / 1e6);
+    };
+
+    xhr.onerror = () => {
+      state.xhr = null;
+      reject(new Error("Network transfer failed"));
+    };
+    xhr.ontimeout = () => {
+      state.xhr = null;
+      reject(new Error("Transfer timed out"));
+    };
+    xhr.onabort = () => {
+      state.xhr = null;
+      reject(new Error(state.stopped ? "Stopped" : "Transfer aborted"));
+    };
+
+    try {
+      xhr.send(body || null);
+    } catch (error) {
+      state.xhr = null;
+      reject(error);
+    }
   });
 }
 
-async function fetchWithTimeout(url,options={},timeout=15000){
-  const controller=new AbortController();
-  const timer=setTimeout(()=>controller.abort(),timeout);
-  try{return await fetch(url,{...options,signal:controller.signal,cache:"no-store"});}
-  finally{clearTimeout(timer);}
-}
+async function measureDownload() {
+  // Smaller staged transfers finish reliably on phones while still giving the
+  // test enough data to reach a useful throughput measurement.
+  const sizes = [1_000_000, 3_000_000, 5_000_000];
+  const results = [];
 
-async function measurePing(){
-  const samples=[];
-  for(let i=0;i<5;i++){
-    const start=performance.now();
-    try{
-      const response=await fetchWithTimeout(`${TEST_HOST}/cdn-cgi/trace?ts=${Date.now()}-${i}`,{mode:"cors"},8000);
-      if(response.ok)samples.push(performance.now()-start);
-    }catch{}
-    await sleep(80);
+  for (let i = 0; i < sizes.length; i++) {
+    const size = sizes[i];
+    const speed = await xhrTransfer({
+      method: "GET",
+      url: `${TEST_HOST}/__down?bytes=${size}&cacheBust=${crypto.randomUUID()}`,
+      totalBytes: size,
+      progressBase: i * 18,
+      progressSpan: 18,
+      timeout: 30000,
+    });
+    results.push(speed);
+    $("downloadResult").textContent = format(speed);
+    await sleep(120);
   }
-  if(!samples.length)throw new Error("Latency endpoint unavailable");
-  const jitter=samples.slice(1).reduce((sum,n,i)=>sum+Math.abs(n-samples[i]),0)/(samples.length-1);
-  return {avg:average(samples),jitter};
-}
 
-async function readDownload(url,baseProgress,progressSpan,totalBytes){
-  const start=performance.now();
-  const response=await fetchWithTimeout(url,{mode:"cors"},30000);
-  if(!response.ok||!response.body)throw new Error("Download endpoint unavailable");
-  const reader=response.body.getReader();
-  let bytes=0;
-  while(true){
-    const result=await Promise.race([
-      reader.read(),
-      new Promise((_,reject)=>setTimeout(()=>reject(new Error("Download stalled")),10000))
-    ]);
-    if(result.done)break;
-    bytes+=result.value.byteLength;
-    const elapsed=(performance.now()-start)/1000;
-    if(elapsed>0)setMetric(bytes*8/elapsed/1e6,"Mbps");
-    setProgress(baseProgress+Math.min(progressSpan,progressSpan*(bytes/totalBytes)));
-  }
-  const elapsed=(performance.now()-start)/1000;
-  if(bytes<100000)throw new Error("Download transfer was too small");
-  return bytes*8/elapsed/1e6;
-}
-
-async function measureDownload(){
-  const sizes=[5000000,10000000,20000000];
-  const results=[];
-  for(let i=0;i<sizes.length;i++){
-    const url=`${TEST_HOST}/__down?bytes=${sizes[i]}&cacheBust=${crypto.randomUUID()}`;
-    results.push(await readDownload(url,12+i*15,15,sizes[i]));
-    setProgress(27+i*15);
-  }
   return average(results.slice(-2));
 }
 
-async function measureUpload(){
-  const sizes=[750000,1500000,3000000];
-  const results=[];
-  for(let i=0;i<sizes.length;i++){
-    const body=new Uint8Array(sizes[i]);
-    const start=performance.now();
-    const response=await fetchWithTimeout(`${TEST_HOST}/__up?cacheBust=${crypto.randomUUID()}`,{
-      method:"POST",mode:"cors",headers:{"Content-Type":"application/octet-stream"},body
-    },30000);
-    if(!response.ok)throw new Error("Upload endpoint unavailable");
-    await response.arrayBuffer();
-    const elapsed=(performance.now()-start)/1000;
-    if(elapsed>0)results.push(body.byteLength*8/elapsed/1e6);
-    setProgress(65+i*11);
-    if(results.length)setMetric(results.at(-1),"Mbps");
+async function measureUpload() {
+  const sizes = [500_000, 1_000_000, 2_000_000];
+  const results = [];
+
+  for (let i = 0; i < sizes.length; i++) {
+    const size = sizes[i];
+    const body = new Uint8Array(size);
+    const speed = await xhrTransfer({
+      method: "POST",
+      url: `${TEST_HOST}/__up?cacheBust=${crypto.randomUUID()}`,
+      body,
+      totalBytes: size,
+      progressBase: 55 + i * 14,
+      progressSpan: 14,
+      timeout: 30000,
+    });
+    results.push(speed);
+    $("uploadResult").textContent = format(speed);
+    await sleep(120);
   }
-  if(!results.length)throw new Error("Upload measurement failed");
+
   return average(results.slice(-2));
 }
 
-async function runTest(){
-  if(state.running||!navigator.onLine)return;
-  state.running=true;
-  $("startButton").disabled=true;
-  $("startButton").textContent="Testing…";
-  $("connectionStatus").textContent="Testing";
-  const started=performance.now();
-  setProgress(2);
-  try{
-    setStage("ping");
-    $("testState").textContent="Checking latency…";
-    const latency=await measurePing();
-    state.ping=latency.avg;state.jitter=latency.jitter;
-    $("pingResult").textContent=format(state.ping);$("jitterResult").textContent=format(state.jitter);
-    setMetric(state.ping,"ms");setProgress(10);
+async function measurePing() {
+  const samples = [];
+  for (let i = 0; i < 5; i++) {
+    if (state.stopped) throw new Error("Stopped");
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    const started = performance.now();
+    try {
+      const response = await fetch(`${TEST_HOST}/cdn-cgi/trace?cacheBust=${crypto.randomUUID()}`, {
+        cache: "no-store",
+        mode: "cors",
+        signal: controller.signal,
+      });
+      if (response.ok) samples.push(performance.now() - started);
+    } catch {
+      // A latency sample can fail without invalidating the throughput test.
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  if (!samples.length) return { avg: NaN, jitter: NaN };
+  const jitterValues = samples.slice(1).map((value, index) => Math.abs(value - samples[index]));
+  return { avg: average(samples), jitter: average(jitterValues) };
+}
 
-    setStage("download");
-    $("testState").textContent="Checking download speed…";
-    await sleep(250);
-    state.download=await measureDownload();
-    $("downloadResult").textContent=format(state.download);setMetric(state.download,"Mbps");setProgress(50);
+function stopTest() {
+  if (!state.running) return;
+  state.stopped = true;
+  cancelCurrentTransfer();
+  $("connectionStatus").textContent = "Stopped";
+  $("modeLabel").textContent = "Test stopped";
+  $("testState").textContent = "Test stopped. You can retry when ready.";
+  setButtons("stopped");
+  state.running = false;
+}
+
+async function runTest() {
+  if (state.running || !navigator.onLine) return;
+
+  state.running = true;
+  state.stopped = false;
+  state.download = null;
+  state.upload = null;
+  state.ping = null;
+  state.jitter = null;
+  setButtons("running");
+  $("connectionStatus").textContent = "Testing";
+  $("modeLabel").textContent = "Live throughput test";
+  $("testState").textContent = "Checking download speed…";
+  setStage("download");
+  setStageProgress(0);
+  setSpeed(0);
+  const started = performance.now();
+
+  try {
+    state.download = await measureDownload();
+    if (state.stopped) throw new Error("Stopped");
+    $("downloadResult").textContent = format(state.download);
+    setSpeed(state.download);
 
     setStage("upload");
-    $("testState").textContent="Checking upload speed…";
-    await sleep(350);
-    state.upload=await measureUpload();
-    $("uploadResult").textContent=format(state.upload);setMetric(state.upload,"Mbps");setProgress(100);
-    document.querySelector('[data-stage-dot="upload"]').classList.remove("active");
-    document.querySelector('[data-stage-dot="upload"]').classList.add("done");
-    $("testState").textContent="Test complete";$("connectionStatus").textContent="Complete";
-  }catch(error){
-    console.error("GLOBE test error:",error);
-    $("testState").textContent=error.name==="AbortError"?"Test timed out — please try again.":"Test could not complete — please try again.";
-    $("connectionStatus").textContent="Error";
-  }finally{
-    state.running=false;$("startButton").disabled=false;$("startButton").textContent="Run Again";
-    $("elapsed").textContent=`${((performance.now()-started)/1000).toFixed(1)}s`;
+    $("testState").textContent = "Checking upload speed…";
+    state.upload = await measureUpload();
+    if (state.stopped) throw new Error("Stopped");
+    $("uploadResult").textContent = format(state.upload);
+    setSpeed(state.upload);
+
+    $("testState").textContent = "Measuring ping and jitter…";
+    const latency = await measurePing();
+    state.ping = latency.avg;
+    state.jitter = latency.jitter;
+    $("pingResult").textContent = format(state.ping);
+    $("jitterResult").textContent = format(state.jitter);
+
+    setStageProgress(100);
+    $("testState").textContent = "Test complete";
+    $("modeLabel").textContent = "Test complete";
+    $("connectionStatus").textContent = "Complete";
+    setButtons("done");
+  } catch (error) {
+    if (state.stopped) {
+      setButtons("stopped");
+    } else {
+      console.error("GLOBE test error:", error);
+      $("testState").textContent = "Test failed. You can retry the test.";
+      $("modeLabel").textContent = "Test needs another try";
+      $("connectionStatus").textContent = "Error";
+      setButtons("error");
+    }
+  } finally {
+    state.xhr = null;
+    state.running = false;
+    $("elapsed").textContent = `${((performance.now() - started) / 1000).toFixed(1)}s`;
   }
 }
 
-document.querySelectorAll(".metric-tab").forEach(button=>button.addEventListener("click",()=>{
-  if(state.running)return;
-  const metric=button.dataset.metric;
-  document.querySelectorAll(".metric-tab").forEach(b=>b.classList.remove("active"));button.classList.add("active");
-  const values={download:[state.download,"Mbps"],upload:[state.upload,"Mbps"],ping:[state.ping,"ms"]};
-  setMetric(values[metric][0],values[metric][1]);
-}));
-$("startButton").addEventListener("click",runTest);
-window.addEventListener("online",getNetworkInfo);window.addEventListener("offline",getNetworkInfo);getNetworkInfo();
+$("startButton").addEventListener("click", runTest);
+$("stopButton").addEventListener("click", stopTest);
+$("retryButton").addEventListener("click", runTest);
+window.addEventListener("online", getNetworkInfo);
+window.addEventListener("offline", getNetworkInfo);
+getNetworkInfo();
+setButtons("done");
