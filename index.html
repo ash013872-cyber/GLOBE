@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#07111f" />
+  <title>GLOBE — Internet Speed Test</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="GLOBE home">
+        <span class="brand-mark">G</span>
+        <span>GLOBE</span>
+      </a>
+      <div class="status-pill"><span class="status-dot"></span><span id="connectionStatus">Ready</span></div>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="eyebrow">INTERNET PERFORMANCE</div>
+        <h1>How fast is your internet, really?</h1>
+        <p>Measure latency, download and upload performance from your browser with a clean, transparent test.</p>
+
+        <div class="tester-card">
+          <div class="metric-tabs" role="tablist" aria-label="Test metric">
+            <button class="metric-tab active" data-metric="download" role="tab">Download</button>
+            <button class="metric-tab" data-metric="upload" role="tab">Upload</button>
+            <button class="metric-tab" data-metric="ping" role="tab">Ping</button>
+          </div>
+
+          <div class="gauge-wrap">
+            <svg class="gauge" viewBox="0 0 280 280" aria-hidden="true">
+              <circle class="gauge-track" cx="140" cy="140" r="112"></circle>
+              <circle id="gaugeProgress" class="gauge-progress" cx="140" cy="140" r="112"></circle>
+            </svg>
+            <div class="gauge-center">
+              <div id="speedValue" class="speed-value">0.0</div>
+              <div id="speedUnit" class="speed-unit">Mbps</div>
+            </div>
+          </div>
+
+          <div class="test-state" id="testState">Ready for a test</div>
+          <button id="startButton" class="start-button">Start Test</button>
+          <div class="progress-track" aria-hidden="true"><div id="progressBar"></div></div>
+          <div class="test-meta">
+            <span id="elapsed">0.0s</span>
+            <span id="serverLabel">Browser test</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="results-grid" aria-label="Test results">
+        <article class="result-card"><div class="result-icon">↓</div><div><span>Download</span><strong id="downloadResult">—</strong><small>Mbps</small></div></article>
+        <article class="result-card"><div class="result-icon">↑</div><div><span>Upload</span><strong id="uploadResult">—</strong><small>Mbps</small></div></article>
+        <article class="result-card"><div class="result-icon">◌</div><div><span>Ping</span><strong id="pingResult">—</strong><small>ms</small></div></article>
+        <article class="result-card"><div class="result-icon">∿</div><div><span>Jitter</span><strong id="jitterResult">—</strong><small>ms</small></div></article>
+      </section>
+
+      <section class="info-grid">
+        <article class="info-card">
+          <div class="info-heading"><span class="mini-badge">NETWORK</span><h2>Your connection</h2></div>
+          <dl>
+            <div><dt>Online</dt><dd id="onlineState">Checking…</dd></div>
+            <div><dt>Connection type</dt><dd id="connectionType">—</dd></div>
+            <div><dt>Downlink estimate</dt><dd id="downlinkEstimate">—</dd></div>
+            <div><dt>Effective type</dt><dd id="effectiveType">—</dd></div>
+          </dl>
+        </article>
+        <article class="info-card">
+          <div class="info-heading"><span class="mini-badge">ABOUT</span><h2>How it works</h2></div>
+          <p>GLOBE uses browser-native timing and transfer measurements. Results can vary with your ISP, Wi‑Fi conditions, background traffic, VPNs and the test endpoint.</p>
+          <p class="muted">For the most reliable comparison, close heavy downloads and run the test a few times.</p>
+        </article>
+      </section>
+    </main>
+
+    <footer>GLOBE speed test · Browser-based measurement</footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
