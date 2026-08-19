@@ -7,8 +7,8 @@
   <title>GLOBE — Internet Speed Test</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=4" />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
+  <link rel="stylesheet" href="styles.css?v=5" />
 </head>
 <body>
   <div class="app-shell">
@@ -21,7 +21,7 @@
       <section class="hero">
         <div class="eyebrow">INTERNET PERFORMANCE</div>
         <h1>How fast is your internet, really?</h1>
-        <p>Real download and upload measurements from the Cloudflare edge, with latency and jitter reported separately.</p>
+        <p>Fast real-world download and upload measurements from the Cloudflare edge, with latency and jitter reported separately.</p>
 
         <div class="tester-card">
           <div class="stage-tabs" aria-label="Test stages">
@@ -58,7 +58,7 @@
           </div>
           <button id="retryButton" class="retry-button" hidden>↻ Retry Test</button>
 
-          <div class="test-meta"><span id="elapsed">0.0s</span><span id="serverLabel">Cloudflare edge</span></div>
+          <div class="test-meta"><span id="elapsed">0.0s</span><span id="serverLabel">Cloudflare edge · Quick mode</span></div>
         </div>
       </section>
 
@@ -81,7 +81,7 @@
         </article>
         <article class="info-card">
           <div class="info-heading"><span class="mini-badge">MEASUREMENT</span><h2>What GLOBE measures</h2></div>
-          <p>Download and upload are measured with Cloudflare's open-source speed-test engine. Ping and jitter are kept out of the main meter so the throughput display stays clear.</p>
+          <p>GLOBE uses Cloudflare's open-source speed-test engine with a lightweight measurement profile for a faster, smoother test.</p>
           <p class="muted">Stop at any time. If a measurement fails, retry without refreshing the page.</p>
         </article>
       </section>
@@ -90,6 +90,6 @@
     <footer>GLOBE speed test · Browser-based measurement</footer>
   </div>
 
-  <script type="module" src="app.js?v=4"></script>
+  <script type="module" src="app.js?v=5"></script>
 </body>
 </html>
