@@ -13,17 +13,21 @@ const state = {
   running: false,
   stage: "idle",
   startedAt: 0,
-  timer: null,
   downloadPoints: 0,
   uploadPoints: 0,
 };
 
+// Quick, responsive measurement profile.
+// The previous profile could make users wait through several large transfers.
+// This keeps the test useful while cutting unnecessary traffic and waiting.
 const measurements = [
-  { type: "download", bytes: 1e6, count: 3 },
-  { type: "download", bytes: 1e7, count: 2 },
-  { type: "upload", bytes: 1e6, count: 3 },
-  { type: "upload", bytes: 1e7, count: 2 },
-  { type: "latency", numPackets: 10 },
+  { type: "latency", numPackets: 5 },
+  { type: "download", bytes: 1e5, count: 1, bypassMinDuration: true },
+  { type: "download", bytes: 1e6, count: 2 },
+  { type: "download", bytes: 1e7, count: 1 },
+  { type: "upload", bytes: 1e5, count: 1, bypassMinDuration: true },
+  { type: "upload", bytes: 1e6, count: 2 },
+  { type: "upload", bytes: 1e7, count: 1 },
 ];
 
 function setGauge(mbps) {
@@ -103,14 +107,14 @@ function updateLiveResults(engine, eventType = "") {
   if (Number.isFinite(data.jitter)) $("jitterResult").textContent = format(data.jitter);
 
   if (state.stage === "download") {
-    const completed = Math.min(5, state.downloadPoints);
-    const progress = Math.min(96, completed * 18 + 8);
+    const completed = Math.min(4, state.downloadPoints);
+    const progress = Math.min(96, completed * 22 + 5);
     const current = data.downPoints.at(-1)?.bps ? data.downPoints.at(-1).bps / 1e6 : data.download;
     if (Number.isFinite(current)) setGauge(current);
     setDataProgress(progress, completed ? `${completed} transfer${completed === 1 ? "" : "s"} measured` : "Starting download measurement…");
   } else if (state.stage === "upload") {
-    const completed = Math.min(5, state.uploadPoints);
-    const progress = Math.min(96, completed * 18 + 8);
+    const completed = Math.min(4, state.uploadPoints);
+    const progress = Math.min(96, completed * 22 + 5);
     const current = data.upPoints.at(-1)?.bps ? data.upPoints.at(-1).bps / 1e6 : data.upload;
     if (Number.isFinite(current)) setGauge(current);
     setDataProgress(progress, completed ? `${completed} transfer${completed === 1 ? "" : "s"} measured` : "Starting upload measurement…");
@@ -128,8 +132,10 @@ function makeEngine() {
     measurements,
     measureDownloadLoadedLatency: false,
     measureUploadLoadedLatency: false,
-    bandwidthFinishRequestDuration: 700,
+    // Stop ramping sooner so fast connections do not waste time on large transfers.
+    bandwidthFinishRequestDuration: 450,
     bandwidthMinRequestDuration: 10,
+    bandwidthAbortRequestDuration: 5000,
   });
 
   engine.onRunningChange = (running) => {
@@ -168,7 +174,7 @@ function makeEngine() {
     if (Number.isFinite(data.latency)) $("pingResult").textContent = format(data.latency);
     if (Number.isFinite(data.jitter)) $("jitterResult").textContent = format(data.jitter);
 
-    const finalSpeed = Number.isFinite(data.upload) ? data.upload : data.download;
+    const finalSpeed = Number.isFinite(data.download) ? data.download : data.upload;
     if (Number.isFinite(finalSpeed)) setGauge(finalSpeed);
     setStage("finished");
     setDataProgress(100, "Measurement complete");
@@ -178,7 +184,8 @@ function makeEngine() {
     $("retryButton").hidden = false;
     $("retryButton").textContent = "↻ Run Again";
     $("startButton").hidden = true;
-    $("elapsed").textContent = `${(data.totalDurationMs ? data.totalDurationMs / 1000 : (performance.now() - state.startedAt) / 1000).toFixed(1)}s`;
+    const total = results?.getTotalDurationMs?.();
+    $("elapsed").textContent = `${(Number.isFinite(total) ? total / 1000 : (performance.now() - state.startedAt) / 1000).toFixed(1)}s`;
   };
 
   engine.onError = (error) => {
@@ -219,7 +226,11 @@ function startTest() {
     $("testState").textContent = "You are offline.";
     return;
   }
-  if (!state.engine || state.engine.isFinished) state.engine = makeEngine();
+
+  // Always start a clean engine. This avoids stale/paused measurement state.
+  if (state.engine && !state.engine.isFinished) state.engine.pause();
+  state.engine = makeEngine();
+
   resetUI();
   state.startedAt = performance.now();
   state.stage = "download";
@@ -248,11 +259,7 @@ function stopTest() {
 
 $("startButton").addEventListener("click", startTest);
 $("stopButton").addEventListener("click", stopTest);
-$("retryButton").addEventListener("click", () => {
-  if (state.engine && !state.engine.isFinished) state.engine.pause();
-  state.engine = null;
-  startTest();
-});
+$("retryButton").addEventListener("click", startTest);
 
 window.addEventListener("online", getNetworkInfo);
 window.addEventListener("offline", () => {
