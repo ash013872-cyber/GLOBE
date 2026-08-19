@@ -4,14 +4,7 @@ const circumference = 2 * Math.PI * 112;
 progressCircle.style.strokeDasharray = circumference;
 progressCircle.style.strokeDashoffset = circumference;
 
-const state = {
-  running: false,
-  metric: "download",
-  download: null,
-  upload: null,
-  ping: null,
-  jitter: null,
-};
+const state = { running: false, metric: "download", download: null, upload: null, ping: null, jitter: null };
 
 function setProgress(percent) {
   const clamped = Math.max(0, Math.min(100, percent));
@@ -31,7 +24,6 @@ function format(value) {
 function getNetworkInfo() {
   const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
   $("onlineState").textContent = navigator.onLine ? "Online" : "Offline";
-  $("onlineState").className = navigator.onLine ? "online" : "offline";
   if (!connection) return;
   $("connectionType").textContent = connection.type || "Browser reported";
   $("downlinkEstimate").textContent = Number.isFinite(connection.downlink) ? `${connection.downlink} Mbps` : "—";
@@ -39,39 +31,40 @@ function getNetworkInfo() {
 }
 
 function average(values) {
-  return values.reduce((a, b) => a + b, 0) / values.length;
+  return values.length ? values.reduce((a, b) => a + b, 0) / values.length : NaN;
 }
 
-async function measurePing() {
-  const samples = [];
+async function measureLatency() {
   const endpoint = "https://www.cloudflare.com/cdn-cgi/trace";
+  const samples = [];
   for (let i = 0; i < 5; i++) {
     const start = performance.now();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
     try {
-      await fetch(`${endpoint}?t=${Date.now()}-${i}`, { cache: "no-store", mode: "cors" });
+      await fetch(`${endpoint}?cacheBust=${crypto.randomUUID()}`, {
+        cache: "no-store",
+        mode: "cors",
+        signal: controller.signal,
+      });
       samples.push(performance.now() - start);
-    } catch {
-      // CORS/network failures are handled by the caller.
+    } finally {
+      clearTimeout(timer);
     }
   }
-  if (!samples.length) throw new Error("Ping endpoint unavailable");
-  const avg = average(samples);
-  const jitter = average(samples.map((n, i) => i ? Math.abs(n - samples[i - 1]) : 0).slice(1));
-  return { avg, jitter };
+  if (!samples.length) throw new Error("Latency endpoint unavailable");
+  const jitterSamples = samples.slice(1).map((n, i) => Math.abs(n - samples[i]));
+  return { avg: average(samples), jitter: average(jitterSamples) };
 }
 
 async function measureDownload() {
-  // Public cache-busted files. Using several object sizes avoids making the UI
-  // look fast because of a tiny response while keeping the browser responsive.
-  const urls = [
-    "https://speed.cloudflare.com/__down?bytes=5000000",
-    "https://speed.cloudflare.com/__down?bytes=10000000",
-    "https://speed.cloudflare.com/__down?bytes=20000000",
-  ];
+  const sizes = [5000000, 10000000, 20000000];
   const results = [];
-  for (let i = 0; i < urls.length; i++) {
+  for (let i = 0; i < sizes.length; i++) {
     const start = performance.now();
-    const response = await fetch(`${urls[i]}&cacheBust=${crypto.randomUUID()}`, { cache: "no-store" });
+    const response = await fetch(`https://speed.cloudflare.com/__down?bytes=${sizes[i]}&cacheBust=${crypto.randomUUID()}`, {
+      cache: "no-store",
+    });
     if (!response.ok || !response.body) throw new Error("Download endpoint unavailable");
     const reader = response.body.getReader();
     let bytes = 0;
@@ -80,19 +73,17 @@ async function measureDownload() {
       if (done) break;
       bytes += value.byteLength;
       const elapsed = (performance.now() - start) / 1000;
-      const mbps = elapsed > 0 ? (bytes * 8) / elapsed / 1e6 : 0;
-      setMetric(mbps, "Mbps");
-      setProgress(10 + (i * 25) + Math.min(25, elapsed * 2));
+      if (elapsed > 0) setMetric((bytes * 8) / elapsed / 1e6, "Mbps");
+      setProgress(10 + i * 17 + Math.min(17, (elapsed / 8) * 17));
     }
     const elapsed = (performance.now() - start) / 1000;
-    results.push((bytes * 8) / elapsed / 1e6);
+    if (elapsed > 0) results.push((bytes * 8) / elapsed / 1e6);
   }
+  if (!results.length) throw new Error("Download measurement failed");
   return average(results.slice(-2));
 }
 
 async function measureUpload() {
-  // Upload tests are sent to an endpoint that accepts POST bodies. Three runs
-  // reduce one-off Wi-Fi spikes while limiting total data usage.
   const endpoint = "https://httpbin.org/anything";
   const sizes = [750000, 1500000, 2500000];
   const results = [];
@@ -109,16 +100,16 @@ async function measureUpload() {
     if (!response.ok) throw new Error("Upload endpoint unavailable");
     await response.arrayBuffer();
     const elapsed = (performance.now() - start) / 1000;
-    const mbps = (body.byteLength * 8) / elapsed / 1e6;
-    results.push(mbps);
-    setMetric(mbps, "Mbps");
-    setProgress(60 + i * 12);
+    if (elapsed > 0) results.push((body.byteLength * 8) / elapsed / 1e6);
+    setProgress(62 + i * 12);
+    if (results.length) setMetric(results.at(-1), "Mbps");
   }
+  if (!results.length) throw new Error("Upload measurement failed");
   return average(results.slice(-2));
 }
 
 async function runTest() {
-  if (state.running) return;
+  if (state.running || !navigator.onLine) return;
   state.running = true;
   $("startButton").disabled = true;
   $("startButton").textContent = "Testing…";
@@ -128,30 +119,28 @@ async function runTest() {
   const started = performance.now();
 
   try {
-    const ping = await measurePing();
-    state.ping = ping.avg;
-    state.jitter = ping.jitter;
+    const latency = await measureLatency();
+    state.ping = latency.avg;
+    state.jitter = latency.jitter;
     $("pingResult").textContent = format(state.ping);
     $("jitterResult").textContent = format(state.jitter);
     setMetric(state.ping, "ms");
-    $("testState").textContent = "Measuring download…";
-    setProgress(12);
 
+    $("testState").textContent = "Measuring download…";
     state.download = await measureDownload();
     $("downloadResult").textContent = format(state.download);
-    setMetric(state.download, "Mbps");
-    $("testState").textContent = "Measuring upload…";
-    setProgress(62);
 
+    $("testState").textContent = "Measuring upload…";
     state.upload = await measureUpload();
     $("uploadResult").textContent = format(state.upload);
-    setMetric(state.upload, "Mbps");
+
+    setMetric(state.download, "Mbps");
     setProgress(100);
     $("testState").textContent = "Test complete";
     $("connectionStatus").textContent = "Complete";
   } catch (error) {
-    console.error(error);
-    $("testState").textContent = "Test could not complete — check your connection or try again.";
+    console.error("GLOBE test failed:", error);
+    $("testState").textContent = "Test failed — retry or check your connection.";
     $("connectionStatus").textContent = "Error";
     setProgress(0);
   } finally {
@@ -167,7 +156,11 @@ document.querySelectorAll(".metric-tab").forEach((button) => {
     document.querySelectorAll(".metric-tab").forEach((b) => b.classList.remove("active"));
     button.classList.add("active");
     state.metric = button.dataset.metric;
-    const values = { download: [state.download, "Mbps"], upload: [state.upload, "Mbps"], ping: [state.ping, "ms"] };
+    const values = {
+      download: [state.download, "Mbps"],
+      upload: [state.upload, "Mbps"],
+      ping: [state.ping, "ms"],
+    };
     setMetric(values[state.metric][0], values[state.metric][1]);
   });
 });
