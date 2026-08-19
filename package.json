@@ -1,0 +1,9 @@
+{
+  "name": "globe-speed-test",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Browser-based internet speed checker with download, upload, ping and jitter measurements.",
+  "scripts": {
+    "check": "node --check app.js"
+  }
+}
